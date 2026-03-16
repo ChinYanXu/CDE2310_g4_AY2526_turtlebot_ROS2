@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# ROS
+build/
+install/
+log/
+
+# VSCode
+.vscode/
+
+# system
+.DS_Store
