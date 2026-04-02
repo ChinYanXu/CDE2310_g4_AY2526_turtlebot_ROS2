@@ -18,6 +18,21 @@ class OccupancyGrid2d:
         LethalObstacle = 100
         NoInformation = -1
 
+        # Cartographer
+        OccupiedThreshold = 70
+
+    # Cartographer
+    def is_free(self, mx: int, my: int) -> bool:
+        cost = self.get_cost(mx, my)
+        return cost != self.CostValues.NoInformation and cost < self.CostValues.OccupiedThreshold
+
+    def is_unknown(self, mx: int, my: int) -> bool:
+        return self.get_cost(mx, my) == self.CostValues.NoInformation
+
+    def is_obstacle(self, mx: int, my: int) -> bool:
+        cost = self.get_cost(mx, my)
+        return cost != self.CostValues.NoInformation and cost >= self.CostValues.OccupiedThreshold
+
     def __init__(self, grid_msg):
         self.map = grid_msg
 
@@ -223,13 +238,11 @@ def is_frontier_point(point: FrontierPoint, costmap: OccupancyGrid2d, cache: Fro
     - current cell is unknown
     - at least one neighbor is free
     """
-    if costmap.get_cost(point.map_x, point.map_y) != OccupancyGrid2d.CostValues.NoInformation:
+    if not costmap.is_free(point.map_x, point.map_y):
         return False
-
     for n in get_neighbors(point, costmap, cache):
-        if costmap.get_cost(n.map_x, n.map_y) == OccupancyGrid2d.CostValues.FreeSpace:
+        if costmap.is_unknown(n.map_x, n.map_y):
             return True
-
     return False
 
 
@@ -366,35 +379,27 @@ def is_unknown_adjacent_free_cell(mx: int, my: int, costmap: OccupancyGrid2d) ->
     Free-space cell with at least one unknown neighbor.
     This is useful as a candidate 'border' viewpoint.
     """
-    if costmap.get_cost(mx, my) != OccupancyGrid2d.CostValues.FreeSpace:
+    if not costmap.is_free(mx, my):
         return False
-
     for nx in range(mx - 1, mx + 2):
         for ny in range(my - 1, my + 2):
             if nx < 0 or ny < 0 or nx >= costmap.get_size_x() or ny >= costmap.get_size_y():
                 continue
             if nx == mx and ny == my:
                 continue
-
-            if costmap.get_cost(nx, ny) == OccupancyGrid2d.CostValues.NoInformation:
+            if costmap.is_unknown(nx, ny):
                 return True
-
     return False
 
 
+
 def obstacle_clearance_ok(mx: int, my: int, costmap: OccupancyGrid2d, min_clearance_cells: int) -> bool:
-    """
-    Reject points too close to occupied cells.
-    """
     for nx in range(mx - min_clearance_cells, mx + min_clearance_cells + 1):
         for ny in range(my - min_clearance_cells, my + min_clearance_cells + 1):
             if nx < 0 or ny < 0 or nx >= costmap.get_size_x() or ny >= costmap.get_size_y():
                 continue
-
-            c = costmap.get_cost(nx, ny)
-            if c > OCC_THRESHOLD:
+            if costmap.is_obstacle(nx, ny):
                 return False
-
     return True
 
 

@@ -27,6 +27,10 @@ setup(
     entry_points={
         'console_scripts': [
             'frontier_explorer = cde2310_g4_ay2526.main:main',
+            'coordinator = cde2310_g4_ay2526.coordinator:main',
+            'aruco = camera_launch_files.aruco_detection_launchfile:generate_launch_description',
+            'camera_frame = camera_launch_files.camera_frame_baselink_launchfile:generate_launch_description',
+            'camfile = camera_launch_files.camfile:generate_launch_description'
         ],
     },
 )
