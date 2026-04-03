@@ -443,6 +443,7 @@ class Coordinator(Node):
             )
 
             self.last_goal_type = 'frontier'
+            self.get_logger().info('Sending frontier goal')
             self.send_nav_goal(goal)
             return
 
@@ -483,6 +484,7 @@ class Coordinator(Node):
         )
 
         self.last_goal_type = 'fallback'
+        self.get_logger().info('Sending fallback goal')
         self.send_nav_goal(goal)
 
     # ------------------------------------------------------------------
@@ -517,7 +519,8 @@ class Coordinator(Node):
                         f'[Stationary tag] Sending approach goal '
                         f'x={goal.pose.position.x:.2f}, y={goal.pose.position.y:.2f}'
                     )
-                    self.last_goal_type = 'stationary'
+                    self.last_goal_type = 'stationary' 
+                    self.get_logger().info('Sending stationary station goal')
                     if self.send_nav_goal(goal):
                         self.state = 'GO_TO_STATIONARY'
                         self.release_frame_counter = 0
@@ -535,6 +538,7 @@ class Coordinator(Node):
                         f'x={goal.pose.position.x:.2f}, y={goal.pose.position.y:.2f}'
                     )
                     self.last_goal_type = 'midpoint'
+                    self.get_logger().info('Sending midpoint station goal')
                     if self.send_nav_goal(goal):
                         self.state = 'GO_TO_MIDPOINT'
                         self.release_frame_counter = 0
