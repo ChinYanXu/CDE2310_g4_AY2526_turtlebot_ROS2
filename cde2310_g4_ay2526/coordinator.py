@@ -206,24 +206,21 @@ class Coordinator(Node):
 
         return rec
 
-    def get_tag_pose_in_map(self, marker_id: int) -> Optional[PoseStamped]: 
+    def get_tag_pose_in_map(self, marker_id: int) -> Optional[PoseStamped]:
         rec = self.get_fresh_detection(marker_id)
         if rec is None:
             return None
 
         try:
             tf = self.tf_buffer.lookup_transform(
-                target_frame,                               # target frame (robot or map)
-                rec.pose_stamped.header.frame_id,          # camera frame
-                rec.pose_stamped.header.stamp,             # use SAME timestamp
-                timeout=Duration(seconds=0.1)
+                'map',
+                rec.pose_stamped.header.frame_id,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=0.2)
             )
-
             transformed = do_transform_pose(rec.pose_stamped, tf)
             transformed.header.frame_id = 'map'
-
             return transformed
-
         except Exception as ex:
             self.get_logger().warn(
                 f'Could not transform tag {marker_id} from '
