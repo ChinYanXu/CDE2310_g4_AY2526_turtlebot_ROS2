@@ -5,8 +5,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 import math
 import numpy as np
-import heapq
-import math
+
 
 OCC_THRESHOLD = 10
 MIN_FRONTIER_SIZE = 3
@@ -101,119 +100,6 @@ class FrontierCache:
         self.cache.clear()
 
 
-import heapq
-import math
-
-
-def get_4_neighbors(mx: int, my: int, costmap: OccupancyGrid2d):
-    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        nx, ny = mx + dx, my + dy
-        if 0 <= nx < costmap.get_size_x() and 0 <= ny < costmap.get_size_y():
-            yield nx, ny
-
-
-def is_traversable_free_cell(mx: int, my: int, costmap: OccupancyGrid2d) -> bool:
-    return costmap.get_cost(mx, my) == OccupancyGrid2d.CostValues.FreeSpace
-
-
-def is_free_cell_adjacent_to_frontier(mx: int, my: int, frontier: FrontierRegion, costmap: OccupancyGrid2d,
-                                      search_radius_cells: int = 3) -> bool:
-    """
-    Returns True if this free cell is near the frontier centroid and touches unknown space.
-    Used to find a reachable viewpoint / border cell for a frontier.
-    """
-    if not is_traversable_free_cell(mx, my, costmap):
-        return False
-
-    wx, wy = costmap.map_to_world(mx, my)
-    fx, fy = frontier.x, frontier.y
-
-    # Keep candidate cells near the frontier centroid
-    resolution = costmap.map.info.resolution
-    if math.hypot(wx - fx, wy - fy) > search_radius_cells * resolution:
-        return False
-
-    # Cell should border unknown space
-    for nx in range(mx - 1, mx + 2):
-        for ny in range(my - 1, my + 2):
-            if nx < 0 or ny < 0 or nx >= costmap.get_size_x() or ny >= costmap.get_size_y():
-                continue
-            if nx == mx and ny == my:
-                continue
-            if costmap.get_cost(nx, ny) == OccupancyGrid2d.CostValues.NoInformation:
-                return True
-
-    return False
-
-
-def get_frontier_goal_cell(frontier: FrontierRegion, costmap: OccupancyGrid2d,
-                           search_radius_cells: int = 4):
-    """
-    Find a reachable free-space cell near the frontier centroid.
-    Prefer the closest free border cell to the centroid.
-    """
-    try:
-        cx, cy = costmap.world_to_map(frontier.x, frontier.y)
-    except ValueError:
-        return None
-
-    candidates = []
-
-    for x in range(cx - search_radius_cells, cx + search_radius_cells + 1):
-        for y in range(cy - search_radius_cells, cy + search_radius_cells + 1):
-            if x < 0 or y < 0 or x >= costmap.get_size_x() or y >= costmap.get_size_y():
-                continue
-
-            if is_free_cell_adjacent_to_frontier(x, y, frontier, costmap, search_radius_cells):
-                wx, wy = costmap.map_to_world(x, y)
-                dist_to_centroid = math.hypot(wx - frontier.x, wy - frontier.y)
-                candidates.append((dist_to_centroid, x, y))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda item: item[0])
-    _, best_mx, best_my = candidates[0]
-    return best_mx, best_my
-
-
-def dijkstra_distance(costmap: OccupancyGrid2d, start_mx: int, start_my: int,
-                      goal_mx: int, goal_my: int):
-    """
-    Compute shortest path distance over free cells using 4-connectivity.
-    Returns path length in meters, or math.inf if unreachable.
-    """
-    if not is_traversable_free_cell(start_mx, start_my, costmap):
-        return math.inf
-    if not is_traversable_free_cell(goal_mx, goal_my, costmap):
-        return math.inf
-
-    pq = [(0.0, start_mx, start_my)]
-    dist = {(start_mx, start_my): 0.0}
-    visited = set()
-    step_cost = costmap.map.info.resolution
-
-    while pq:
-        cur_cost, mx, my = heapq.heappop(pq)
-
-        if (mx, my) in visited:
-            continue
-        visited.add((mx, my))
-
-        if mx == goal_mx and my == goal_my:
-            return cur_cost
-
-        for nx, ny in get_4_neighbors(mx, my, costmap):
-            if not is_traversable_free_cell(nx, ny, costmap):
-                continue
-
-            new_cost = cur_cost + step_cost
-            if new_cost < dist.get((nx, ny), math.inf):
-                dist[(nx, ny)] = new_cost
-                heapq.heappush(pq, (new_cost, nx, ny))
-
-    return math.inf
-
 def centroid(points):
     arr = np.array(points)
     return float(np.mean(arr[:, 0])), float(np.mean(arr[:, 1]))
@@ -295,83 +181,23 @@ def detect_frontiers(costmap: OccupancyGrid2d, robot_pose, min_frontier_size: in
     return frontiers
 
 
-# def choose_frontier(frontiers, robot_pose, strategy: str = "nearest"):
-#     """
-#     strategy: 'nearest' or 'largest'
-#     """
-#     if not frontiers:
-#         return None
-
-#     if strategy == "largest":
-#         return max(frontiers, key=lambda f: f.size)
-
-#     return min(
-#         frontiers,
-#         key=lambda f: math.hypot(
-#             f.x - robot_pose.position.x,
-#             f.y - robot_pose.position.y
-#         )
-#     )
-
-
-def choose_frontier(frontiers, robot_pose, strategy="nearest", costmap=None):
+def choose_frontier(frontiers, robot_pose, strategy: str = "nearest"):
+    """
+    strategy: 'nearest' or 'largest'
+    """
     if not frontiers:
-        return None, None
+        return None
 
     if strategy == "largest":
-        f = max(frontiers, key=lambda f: f.size)
-        return f, None
+        return max(frontiers, key=lambda f: f.size)
 
-    if strategy == "nearest":
-        f = min(
-            frontiers,
-            key=lambda f: math.hypot(
-                f.x - robot_pose.position.x,
-                f.y - robot_pose.position.y
-            )
+    return min(
+        frontiers,
+        key=lambda f: math.hypot(
+            f.x - robot_pose.position.x,
+            f.y - robot_pose.position.y
         )
-        return f, None
-
-    if strategy in ("nearest_dijkstra", "farthest_dijkstra"):
-        if costmap is None:
-            raise ValueError("costmap is required for Dijkstra-based strategies")
-
-        robot_mx, robot_my = costmap.world_to_map(
-            robot_pose.position.x,
-            robot_pose.position.y
-        )
-
-        reachable = []
-
-        for frontier in frontiers:
-            goal_cell = get_frontier_goal_cell(frontier, costmap)
-            if goal_cell is None:
-                continue
-
-            goal_mx, goal_my = goal_cell
-            path_cost = dijkstra_distance(costmap, robot_mx, robot_my, goal_mx, goal_my)
-
-            if math.isfinite(path_cost):
-                reachable.append((path_cost, frontier, (goal_mx, goal_my)))
-
-        if not reachable:
-            f = min(
-                frontiers,
-                key=lambda f: math.hypot(
-                    f.x - robot_pose.position.x,
-                    f.y - robot_pose.position.y
-                )
-            )
-            return f, None
-
-        if strategy == "nearest_dijkstra":
-            _, frontier, goal_cell = min(reachable, key=lambda item: item[0])
-            return frontier, goal_cell
-
-        _, frontier, goal_cell = max(reachable, key=lambda item: item[0])
-        return frontier, goal_cell
-
-    raise ValueError(f"Unknown frontier strategy: {strategy}")
+    )
 
 
 def is_unknown_adjacent_free_cell(mx: int, my: int, costmap: OccupancyGrid2d) -> bool:
