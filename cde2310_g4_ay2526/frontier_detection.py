@@ -18,15 +18,19 @@ class OccupancyGrid2d:
         NoInformation = -1
 
         # Cartographer
-        OccupiedThreshold = 70
+        FreeThreshold = 40
+        OccupiedThreshold = 80
 
     # Cartographer
     def is_free(self, mx: int, my: int) -> bool:
         cost = self.get_cost(mx, my)
-        return cost != self.CostValues.NoInformation and cost < self.CostValues.OccupiedThreshold
+        return cost != self.CostValues.NoInformation and cost <= self.CostValues.FreeThreshold
 
     def is_unknown(self, mx: int, my: int) -> bool:
-        return self.get_cost(mx, my) == self.CostValues.NoInformation
+        cost = self.get_cost(mx, my)
+        # treat both -1 AND low-confidence readings as unknown
+        return cost == self.CostValues.NoInformation or \
+            (cost > self.CostValues.FreeThreshold and cost < self.CostValues.OccupiedThreshold)
 
     def is_obstacle(self, mx: int, my: int) -> bool:
         cost = self.get_cost(mx, my)
