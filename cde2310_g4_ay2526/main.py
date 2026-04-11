@@ -7,17 +7,15 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
-from rclpy.qos import qos_profile_sensor_data
-from geometry_msgs.msg import PoseStamped, PoseArray
+
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
-import threading
-from tf2_ros import TransformException, Buffer, TransformListener
+
+from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from tf2_geometry_msgs import do_transform_pose
-
 
 from cde2310_g4_ay2526.frontier_detection import (
     OccupancyGrid2d,
@@ -34,7 +32,7 @@ class FrontierExplorer(Node):
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('planner_period_sec', 1.0)
         self.declare_parameter('min_frontier_size', 3)
-        self.declare_parameter('frontier_strategy', 'farthest_dijkstra')
+        self.declare_parameter('frontier_strategy', 'largest')
         self.declare_parameter('fallback_min_obstacle_clearance_cells', 2)
         self.declare_parameter('fallback_revisit_radius_m', 0.8)
         self.declare_parameter('max_recent_fallbacks', 15)
@@ -56,25 +54,6 @@ class FrontierExplorer(Node):
         self.timer = self.create_timer(
             float(self.get_parameter('planner_period_sec').value),
             self.control_loop
-        )
-
-        self.left_aruco_listener = self.create_subscription(
-            PoseArray,
-            "/cam_left/aruco_poses",
-            self.posearray_to_goal,
-            qos_profile_sensor_data
-        )
-        self.right_aruco_listener = self.create_subscription(
-            PoseArray,
-            "/cam_right/aruco_poses",
-            self.posearray_to_goal,
-            qos_profile_sensor_data
-        )
-        self.rpi_aruco_listener = self.create_subscription(
-            PoseArray,
-            "/rpi/aruco_poses",
-            self.posearray_to_goal,
-            qos_profile_sensor_data
         )
 
         self.map_msg = None
@@ -161,14 +140,12 @@ class FrontierExplorer(Node):
         )
 
         self.get_logger().info(f'Detected {len(frontiers)} frontiers.')
-        self.get_logger().info(f'Detected these {frontiers}.')
 
         strategy = self.get_parameter('frontier_strategy').value
-        chosen_frontier, goal_cell = choose_frontier(
+        chosen_frontier = choose_frontier(
             frontiers,
             robot_pose_stamped.pose,
-            strategy=strategy,
-            costmap=costmap
+            strategy=strategy
         )
 
         if chosen_frontier is not None:
@@ -177,44 +154,10 @@ class FrontierExplorer(Node):
             goal = PoseStamped()
             goal.header.frame_id = 'map'
             goal.header.stamp = self.get_clock().now().to_msg()
+            goal.pose.position.x = chosen_frontier.x
+            goal.pose.position.y = chosen_frontier.y
             goal.pose.position.z = 0.0
             goal.pose.orientation = robot_pose_stamped.pose.orientation
-
-            # For Dijkstra-based strategies, use the reachable free-space goal cell.
-            # Otherwise fall back to the frontier centroid.
-            if goal_cell is not None:
-                self.get_logger().info(
-                    f'Sending Dijkstra frontier goal '
-                    f'x={goal.pose.position.x:.2f}, y={goal.pose.position.y:.2f}, '
-                    f'goal_cell={goal_cell}, size={chosen_frontier.size}'
-                )
-                gx, gy = costmap.map_to_world(goal_cell[0], goal_cell[1])
-                goal.pose.position.x = gx
-                goal.pose.position.y = gy
-            else:
-                self.get_logger().info(
-                    f'Sending centroid frontier goal '
-                    f'x={goal.pose.position.x:.2f}, y={goal.pose.position.y:.2f}, '
-                    f'size={chosen_frontier.size}'
-                )
-                goal.pose.position.x = chosen_frontier.x
-                goal.pose.position.y = chosen_frontier.y
-
-            # Final safety check before sending to Nav2
-            try:
-                gmx, gmy = costmap.world_to_map(
-                    goal.pose.position.x,
-                    goal.pose.position.y
-                )
-                self.get_logger().info(
-                    f'Goal map cell=({gmx}, {gmy})'
-                )
-            except ValueError:
-                self.get_logger().warn(
-                    f'Rejected out-of-bounds goal at '
-                    f'x={goal.pose.position.x:.2f}, y={goal.pose.position.y:.2f}'
-                )
-                return
 
             self.get_logger().info(
                 f'Sending frontier goal '
@@ -265,30 +208,7 @@ class FrontierExplorer(Node):
         )
 
         self.last_goal_type = 'fallback'
-        self.send_nav_goal(goal)                                                                                                                                            
-    
-    def aruco_callback(self, msg):
-        """
-        msg.header: Contains timestamp and frame_id (usually 'camera_link')
-        msg.poses: A list of geometry_msgs/msg/Pose objects
-        """                     
-        # Check if any markers were actually detected
-        if not msg.poses or msg.header:
-            self.get_logger().info("No ArUco markers in sight.")
-            return
-
-        self.get_logger().info(f"Detected {len(msg.poses)} markers.")
-
-        for i, pose in enumerate(msg.poses):
-            # Accessing position (x, y, z)
-            pos = pose.position
-            # Accessing orientation (x, y, z, w)
-            ori = pose.orientation
-
-            self.get_logger().info(
-                f"Marker {i} -> Position: x={pos.x:.2f}, y={pos.y:.2f}, z={pos.z:.2f}"
-            )
-    
+        self.send_nav_goal(goal)
 
     def send_nav_goal(self, goal_pose: PoseStamped):
         if not self.nav_client.wait_for_server(timeout_sec=1.0):
