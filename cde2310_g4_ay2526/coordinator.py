@@ -3,22 +3,23 @@
 import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
-from geometry_msgs.msg import TransformStamped    # [J] tf broadcasting for debug
+from geometry_msgs.msg import TransformStamped
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from std_msgs.msg import String
-from geometry_msgs.msg import PoseStamped, Quaternion, Twist
+from geometry_msgs.msg import Pose, PoseStamped, Quaternion, Twist
 from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
 from opennav_docking_msgs.action import DockRobot, UndockRobot
 from action_msgs.msg import GoalStatus
-from tf2_ros import TransformBroadcaster  # [J] tf broadcasting for debug
+from tf2_ros import TransformBroadcaster
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from tf2_geometry_msgs import do_transform_pose
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from ros2_aruco_interfaces.msg import ArucoMarkers
 
@@ -42,7 +43,7 @@ class DetectionRecord:
 class Coordinator(Node):
     def __init__(self):
         super().__init__('coordinator_main')
-        self.last_sent_goal: Optional[PoseStamped] = None    # [J] last_sent_goal not defined, define it first
+        self.last_sent_goal: Optional[PoseStamped] = None
         # frontier detection params
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('planner_period_sec', 0.1)
@@ -51,14 +52,14 @@ class Coordinator(Node):
         self.declare_parameter('fallback_min_obstacle_clearance_cells', 2)
         self.declare_parameter('fallback_revisit_radius_m', 0.8)
         self.declare_parameter('max_recent_fallbacks', 15)
-        self.debug_static_broadcaster = TransformBroadcaster(self)   # [J] static broadcaster
+        self.debug_broadcaster = TransformBroadcaster(self)
         
         # aruco tag ids
         self.declare_parameter('stationary_tag_id', 1)
         self.declare_parameter('moving_tag_id', 2) # handled by payload node
         self.declare_parameter('midpoint_tag_id', 3)
 
-        self.declare_parameter('detection_timeout_sec', 2)    # [J] this is for high latency
+        self.declare_parameter('detection_timeout_sec', 2)
 
         # dispenser trigger
         self.declare_parameter('dispense_topic', '/station_cmd')
@@ -70,19 +71,22 @@ class Coordinator(Node):
         self.last_known_dock_pose: Optional[PoseStamped] = None
 
         # ===== Subscriptions =====
+
+        # FIX 1: map uses TRANSIENT_LOCAL so a late subscriber still gets the last message
+        map_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        
         self.map_sub = self.create_subscription(
-            OccupancyGrid, map_topic, self.map_callback, 10
+            OccupancyGrid, map_topic, self.map_callback, map_qos
         )
 
         self.aruco_left_sub = self.create_subscription(
             ArucoMarkers, '/cam_left/aruco_markers', self.aruco_left_cb, 10
         )
-        # self.aruco_right_sub = self.create_subscription(
-        #     ArucoMarkers, '/cam_right/aruco_markers', self.aruco_right_cb, 10
-        # )
-        # self.aruco_rpi_sub = self.create_subscription(
-        #     ArucoMarkers, '/rpi/aruco_markers', self.aruco_rpi_cb, 10
-        # )
 
         # ===== Publishers / actions =====
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -93,8 +97,8 @@ class Coordinator(Node):
         )
 
         self.dock_client = ActionClient(self, DockRobot, '/dock_robot')
-        self.undock_client = ActionClient(self, UndockRobot, '/undock_robot')
-    
+        self.undock_client = ActionClient(self, UndockRobot, '/undock_robot')        
+
         # ===== TF =====
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -105,7 +109,7 @@ class Coordinator(Node):
             self.control_loop
         )
 
-        self.dock_pose_timer = self.create_timer(0.1, self.dock_pose_loop)  # 10 Hz
+        self.dock_pose_timer = self.create_timer(0.1, self.dock_pose_loop)
         self.active_dock_tag_id: Optional[int] = None
 
         # ===== State =====
@@ -120,6 +124,7 @@ class Coordinator(Node):
         # EXPLORE, GO_TO_STATIONARY, GO_TO_MIDPOINT, WAIT_A_COMPLETE, WAIT_B_COMPLETE
 
         self.latest_detections: Dict[int, DetectionRecord] = {}
+        self.latest_tag_poses: Dict[int, PoseStamped] = {}
 
         self.a_complete = False
         self.b_complete = False
@@ -134,19 +139,15 @@ class Coordinator(Node):
 
     def map_callback(self, msg: OccupancyGrid):
         self.map_msg = msg
+        #self.get_logger().info('Map received.')  # log once so you know QoS is working
 
     def aruco_left_cb(self, msg: ArucoMarkers):
         self.handle_aruco_msg(msg, 'cam_left')
 
-    # def aruco_right_cb(self, msg: ArucoMarkers):
-    #     self.handle_aruco_msg(msg, 'cam_right')
-
-    # def aruco_rpi_cb(self, msg: ArucoMarkers):
-    #     self.handle_aruco_msg(msg, 'rpi')
-
     def handle_aruco_msg(self, msg: ArucoMarkers, source: str):
-        now_sec = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9       # [J] new now_Sec for more consistent timing
+        now_sec = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
         for marker_id, pose in zip(msg.marker_ids, msg.poses):
+            marker_id = int(marker_id)
             ps = PoseStamped()
             ps.header = msg.header
             ps.pose = pose
@@ -154,12 +155,20 @@ class Coordinator(Node):
             new_record = DetectionRecord(
                 frame_id=msg.header.frame_id,
                 stamp_sec=now_sec,
-                marker_id=int(marker_id),
+                marker_id=marker_id,
                 pose_stamped=ps,
                 source=source,
             )
 
-            self.latest_detections[int(marker_id)] = new_record
+            old = self.latest_detections.get(marker_id)
+            if old is None:
+                self.latest_detections[marker_id] = new_record
+                self.update_tag_pose_in_map(marker_id, new_record)
+                continue
+
+            if new_record.stamp_sec > old.stamp_sec:
+                self.latest_detections[marker_id] = new_record
+                self.update_tag_pose_in_map(marker_id, new_record)
 
     # ------------------------------------------------------------------
     # Time / TF helpers
@@ -171,10 +180,7 @@ class Coordinator(Node):
     def get_robot_pose_in_map(self) -> Optional[PoseStamped]:
         try:
             t = self.tf_buffer.lookup_transform(
-                'map',
-                'base_link',
-                rclpy.time.Time(),
-                timeout=Duration(seconds=0.3)
+                'map', 'base_link', rclpy.time.Time(), timeout=Duration(seconds=0.3)
             )
         except TransformException as ex:
             self.get_logger().warn(f'Could not get map->base_link transform: {ex}')
@@ -193,10 +199,10 @@ class Coordinator(Node):
         rec = self.latest_detections.get(marker_id)
         if rec is None:
             return None
-        now_sec = self.get_clock().now().nanoseconds / 1e9   # [J] for more accurate now sec
-        age = now_sec - rec.stamp_sec  # [J] tag age
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        age = now_sec - rec.stamp_sec
         timeout_sec = float(self.get_parameter('detection_timeout_sec').value)
-        if age > timeout_sec:#only fresh tags
+        if age > timeout_sec:
             return None
         # self.get_logger().info(f'[FRESH] now={now_sec:.3f} rec={rec.stamp_sec:.3f} age={age:.3f}') 
         return rec
@@ -204,55 +210,88 @@ class Coordinator(Node):
     def get_tag_pose_in_map(self, marker_id: int) -> Optional[PoseStamped]:
         rec = self.get_fresh_detection(marker_id)
         if rec is None:
-            # self.get_logger().info("no tags detected")
             return None
-        # else:
-            # pose = rec.pose_stamped
-            # return pose
 
-        if not self.tf_buffer.can_transform('map', 'cam_left_camera_link', rclpy.time.Time()):
-            self.get_logger().warn('cam_left_camera_link not yet connected to map, skipping.')   #during startup of coordinator the tf trees arent connected yet
+        pose_in_map = self.latest_tag_poses.get(marker_id)
+        if pose_in_map is None:
+            self.get_logger().warn(f'No cached map pose for tag {marker_id}.')
             return None
-        self.get_logger().info(f'[TF] Attempting transform for tag {marker_id} from {rec.pose_stamped.header.frame_id}') #debug
+
+        return pose_in_map
+
+    def update_tag_pose_in_map(self, marker_id: int, rec: DetectionRecord):
+        target_frame = 'odom'
+        detection_frame = rec.pose_stamped.header.frame_id
+        if not self.tf_buffer.can_transform(target_frame, detection_frame, rclpy.time.Time()):
+            self.get_logger().warn(
+                f'{detection_frame} not yet connected to {target_frame}, skipping.'
+            )
+            return
         try:
             tf = self.tf_buffer.lookup_transform(
-                'map',
-                rec.pose_stamped.header.frame_id,
+                target_frame,
+                detection_frame,
                 rclpy.time.Time(),
-                timeout=Duration(seconds=1.0)  #might have to change this
+                timeout=Duration(seconds=1.0)
             )
 
-            #from here onwards is for debugging by showing the tf on rviz
-            transformed_pose = do_transform_pose(rec.pose_stamped.pose, tf)  
-            self.get_logger().info(f'[TF] Tag {marker_id} transformed successfully')
+            raw = rec.pose_stamped.pose.position
+            # Remap optical frame -> ROS camera_link convention before applying TF.
+            remapped_pose = PoseStamped()
+            remapped_pose.header = rec.pose_stamped.header
+            remapped_pose.pose = Pose()
+            remapped_pose.pose.orientation = rec.pose_stamped.pose.orientation
+            remapped_pose.pose.position.x = raw.z
+            remapped_pose.pose.position.y = -raw.x
+            remapped_pose.pose.position.z = -raw.y
+
+            transformed_pose = do_transform_pose(remapped_pose.pose, tf)
+
+            # Rotate optical Z (0,0,1) by tag quaternion to get normal in optical frame
+            q = rec.pose_stamped.pose.orientation
+            qx, qy, qz, qw = q.x, q.y, q.z, q.w
+            nx = 2.0 * (qx*qz + qw*qy)
+            ny = 2.0 * (qy*qz - qw*qx)
+            nz = 1.0 - 2.0 * (qx*qx + qy*qy)
+
+            # Remap optical -> ROS (same as position remap)
+            nx_ros, ny_ros, nz_ros = nz, -nx, -ny
+
+            # Rotate by TF quaternion to get normal in odom frame
+            tf_q = tf.transform.rotation
+            tx, ty, tz, tw = tf_q.x, tf_q.y, tf_q.z, tf_q.w
+            cx = ty*nz_ros - tz*ny_ros
+            cy = tz*nx_ros - tx*nz_ros
+            cz = tx*ny_ros - ty*nx_ros
+            rx = nx_ros + 2.0*tw*cx + 2.0*(ty*cz - tz*cy)
+            ry = ny_ros + 2.0*tw*cy + 2.0*(tz*cx - tx*cz)
+            yaw = math.atan2(ry, rx)
+
             result = PoseStamped()
-            result.header.frame_id = 'map'
+
+            result.header.frame_id = target_frame
             result.header.stamp = self.get_clock().now().to_msg()
-            result.pose = transformed_pose
-            # Override orientation to point from tag toward robot
-            # robot_pose = self.get_robot_pose_in_map()
-            # if robot_pose is not None:
-            #     dx = robot_pose.pose.position.x - result.pose.position.x
-            #     dy = robot_pose.pose.position.y - result.pose.position.y
-            #     yaw = math.atan2(dy, dx)
-            #     result.pose.orientation = self.yaw_to_quaternion(yaw)
-            # Debug TF
+            result.pose.position = transformed_pose.position
+            result.pose.orientation.x = 0.0
+            result.pose.orientation.y = 0.0
+            result.pose.orientation.z = math.sin(yaw / 2.0)
+            result.pose.orientation.w = math.cos(yaw / 2.0)
+            self.latest_tag_poses[marker_id] = result
+
             debug_tf = TransformStamped()
-            debug_tf.header.stamp = self.get_clock().now().to_msg()
-            debug_tf.header.frame_id = 'map'
+            debug_tf.header.stamp = result.header.stamp
+            debug_tf.header.frame_id = target_frame
             debug_tf.child_frame_id = f'debug_tag_{marker_id}'
             debug_tf.transform.translation.x = result.pose.position.x
             debug_tf.transform.translation.y = result.pose.position.y
             debug_tf.transform.translation.z = result.pose.position.z
             debug_tf.transform.rotation = result.pose.orientation
-            self.debug_static_broadcaster.sendTransform(debug_tf)
-            return result 
+            self.debug_broadcaster.sendTransform(debug_tf)
         except Exception as ex:
             self.get_logger().warn(
-                f'Could not transform tag {marker_id} from '
-                f'{rec.pose_stamped.header.frame_id} to map: {ex}'
+                f'Could not transform tag {marker_id} from {detection_frame} '
+                f'to {target_frame}: {ex}'
             )
-            return None
 
     # ------------------------------------------------------------------
     # Geometry helpers
@@ -268,7 +307,7 @@ class Coordinator(Node):
         return q
 
     # ------------------------------------------------------------------
-    # Nav2 goal helpers
+    # Nav2 / docking helpers
     # ------------------------------------------------------------------
 
     def publish_dock_pose(self, marker_id: int):
@@ -278,13 +317,12 @@ class Coordinator(Node):
             # Fresh detection — update latch and reset lost timer
             self.last_known_dock_pose = pose
 
-        # Publish either fresh or latched pose
-        if self.state == 'GO_TO_MIDPOINT' or self.state == 'GO_TO_STATIONARY':
-            out = PoseStamped()
-            out.header.stamp = self.get_clock().now().to_msg()
-            out.header.frame_id = 'map'
+        if self.state in ('GO_TO_MIDPOINT', 'GO_TO_STATIONARY'):
             if self.last_known_dock_pose is None:
                 return
+            out = PoseStamped()
+            out.header.stamp = self.get_clock().now().to_msg()
+            out.header.frame_id = self.last_known_dock_pose.header.frame_id
             out.pose = self.last_known_dock_pose.pose
             self.detected_dock_pose_pub.publish(out)
 
@@ -336,10 +374,10 @@ class Coordinator(Node):
     def dock_result_callback(self, future):
         self.nav_busy = False
         self.active_dock_tag_id = None
+        self.last_known_dock_pose = None
 
         status = future.result().status
         if status == GoalStatus.STATUS_SUCCEEDED:
-            self.last_known_dock_pose = None   # clear latch
             self.get_logger().info('Docking succeeded.')
             if self.last_goal_type == 'stationary':
                 self.trigger_dispense("A")
@@ -359,7 +397,7 @@ class Coordinator(Node):
         if status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info('Undocking succeeded.')
         else:
-            self.get_logger().warn(f'Docking failed with status {status}.')
+            self.get_logger().warn(f'Undocking failed with status {status}.')
 
         self.state = 'EXPLORE'
 
@@ -369,7 +407,7 @@ class Coordinator(Node):
         self.publish_dock_pose(self.active_dock_tag_id)
 
     def send_nav_goal(self, goal_pose: PoseStamped):
-        self.last_sent_goal = goal_pose   #fixed last_sent goal not defined
+        self.last_sent_goal = goal_pose
         if not self.nav_client.wait_for_server(timeout_sec=1.0):
             self.get_logger().warn('NavigateToPose action server not available yet.')
             return False
@@ -386,9 +424,9 @@ class Coordinator(Node):
         goal_handle = future.result()
 
         if goal_handle is None or not goal_handle.accepted:
-            self.get_logger().warn(f'Goal rejected. Handle={goal_handle}') #more verbose
             self.get_logger().warn(
-                f'Rejected goal was: frame={self.last_sent_goal.header.frame_id} '
+                f'Goal rejected. '
+                f'frame={self.last_sent_goal.header.frame_id} '
                 f'x={self.last_sent_goal.pose.position.x:.3f} '
                 f'y={self.last_sent_goal.pose.position.y:.3f}'
             )
@@ -398,9 +436,7 @@ class Coordinator(Node):
 
         self.goal_handle = goal_handle
         self.get_logger().info('Goal accepted.')
-
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self.goal_result_callback)
+        goal_handle.get_result_async().add_done_callback(self.goal_result_callback)
 
     def goal_result_callback(self, future):
         self.nav_busy = False
@@ -419,7 +455,6 @@ class Coordinator(Node):
             if self.last_goal_type == 'fallback' and self.goal_handle is not None:
                 goal_pose = self.goal_handle.request.pose.pose.position
                 self.recent_fallback_points.append((goal_pose.x, goal_pose.y))
-
                 max_recent = int(self.get_parameter('max_recent_fallbacks').value)
                 if len(self.recent_fallback_points) > max_recent:
                     self.recent_fallback_points.pop(0)
@@ -437,9 +472,8 @@ class Coordinator(Node):
             return
         if not self.nav_busy:
             return
-
         self.get_logger().info('Canceling current goal...')
-        cancel_future = self.goal_handle.async_cancel_goal()
+        cancel_future = self.goal_handle.cancel_goal_async()
         cancel_future.add_done_callback(self.cancel_done_callback)
 
     def cancel_done_callback(self, future):
@@ -501,7 +535,6 @@ class Coordinator(Node):
     def run_frontier_mode(self):
         if self.nav_busy:
             return
-
         if self.map_msg is None:
             self.get_logger().info('Waiting for map...')
             return
@@ -511,7 +544,6 @@ class Coordinator(Node):
             return
 
         costmap = OccupancyGrid2d(self.map_msg)
-
         frontiers = detect_frontiers(
             costmap,
             robot_pose_stamped.pose,
@@ -519,11 +551,7 @@ class Coordinator(Node):
         )
 
         strategy = self.get_parameter('frontier_strategy').value
-        chosen_frontier = choose_frontier(
-            frontiers,
-            robot_pose_stamped.pose,
-            strategy=strategy
-        )
+        chosen_frontier = choose_frontier(frontiers, robot_pose_stamped.pose, strategy=strategy)
 
         if chosen_frontier is not None:
             goal = PoseStamped()
@@ -532,20 +560,14 @@ class Coordinator(Node):
             goal.pose.position.x = chosen_frontier.x
             goal.pose.position.y = chosen_frontier.y
             goal.pose.position.z = 0.0
-
             dx = chosen_frontier.x - robot_pose_stamped.pose.position.x
             dy = chosen_frontier.y - robot_pose_stamped.pose.position.y
-            yaw = math.atan2(dy, dx)
-            goal.pose.orientation = self.yaw_to_quaternion(yaw)
-
+            goal.pose.orientation = self.yaw_to_quaternion(math.atan2(dy, dx))
             self.get_logger().info(
-                f'[Frontier] Sending goal '
-                f'x={goal.pose.position.x:.2f}, y={goal.pose.position.y:.2f}, '
-                f'size={chosen_frontier.size}'
+                f'[Frontier] Sending goal x={goal.pose.position.x:.2f} '
+                f'y={goal.pose.position.y:.2f} size={chosen_frontier.size}'
             )
-
             self.last_goal_type = 'frontier'
-            self.get_logger().info('Sending frontier goal')
             self.send_nav_goal(goal)
             return
 
@@ -553,40 +575,26 @@ class Coordinator(Node):
             costmap=costmap,
             robot_pose=robot_pose_stamped.pose,
             recent_points=self.recent_fallback_points,
-            min_clearance_cells=int(
-                self.get_parameter('fallback_min_obstacle_clearance_cells').value
-            ),
-            revisit_radius=float(
-                self.get_parameter('fallback_revisit_radius_m').value
-            ),
+            min_clearance_cells=int(self.get_parameter('fallback_min_obstacle_clearance_cells').value),
+            revisit_radius=float(self.get_parameter('fallback_revisit_radius_m').value),
         )
 
         if fallback is None:
-            self.get_logger().warn(
-                'No fallback viewpoint found. Exploration may be complete or trapped.'
-            )
+            self.get_logger().warn('No fallback viewpoint found.')
             return
 
         fx, fy = fallback
-
         goal = PoseStamped()
         goal.header.frame_id = 'map'
         goal.header.stamp = self.get_clock().now().to_msg()
         goal.pose.position.x = fx
         goal.pose.position.y = fy
         goal.pose.position.z = 0.0
-
         dx = fx - robot_pose_stamped.pose.position.x
         dy = fy - robot_pose_stamped.pose.position.y
-        yaw = math.atan2(dy, dx)
-        goal.pose.orientation = self.yaw_to_quaternion(yaw)
-
-        self.get_logger().info(
-            f'[Fallback] Sending goal x={fx:.2f}, y={fy:.2f}'
-        )
-
+        goal.pose.orientation = self.yaw_to_quaternion(math.atan2(dy, dx))
+        self.get_logger().info(f'[Fallback] Sending goal x={fx:.2f} y={fy:.2f}')
         self.last_goal_type = 'fallback'
-        self.get_logger().info('Sending fallback goal')
         self.send_nav_goal(goal)
 
     # ------------------------------------------------------------------
@@ -595,15 +603,12 @@ class Coordinator(Node):
 
     def control_loop(self):
         stationary_tag_id = int(self.get_parameter('stationary_tag_id').value)
-        midpoint_tag_id = int(self.get_parameter('midpoint_tag_id').value)
+        moving_tag_id     = int(self.get_parameter('moving_tag_id').value)
+        midpoint_tag_id   = int(self.get_parameter('midpoint_tag_id').value)
 
         if self.map_msg is None:
+            self.get_logger().info('Waiting for map...', throttle_duration_sec=5.0)
             return
-        
-        # Priority:
-        # 1) stationary tin if visible
-        # 2) midpoint for moving tin
-        # 3) exploration
 
         if self.state in ['WAIT_A_COMPLETE', 'WAIT_B_COMPLETE', 'GO_TO_STATIONARY', 'GO_TO_MIDPOINT']:
             if (self.now_sec() - self.state_entry_time) > self.mission_timeout:
@@ -617,6 +622,7 @@ class Coordinator(Node):
             if stationary_pose_map is not None and not self.a_complete:
                 self.last_goal_type = 'stationary'
                 self.active_dock_tag_id = stationary_tag_id
+                self.get_logger().info('Stationary tag detected. Sending dock goal...')
                 if self.nav_busy:
                     self.pending_dock_goal = 'stationary_dock'
                     self.cancel_current_goal()
@@ -630,6 +636,7 @@ class Coordinator(Node):
             if midpoint_pose_map is not None and not self.b_complete:
                 self.last_goal_type = 'midpoint'
                 self.active_dock_tag_id = midpoint_tag_id
+                self.get_logger().info('Midpoint tag detected. Sending dock goal...')
                 if self.nav_busy:
                     self.pending_dock_goal = 'midpoint_dock'
                     self.cancel_current_goal()
@@ -645,7 +652,6 @@ class Coordinator(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = Coordinator()
-
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
