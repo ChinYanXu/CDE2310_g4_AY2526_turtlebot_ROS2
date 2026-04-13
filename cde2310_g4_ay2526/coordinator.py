@@ -56,8 +56,8 @@ class Coordinator(Node):
         
         # aruco tag ids
         self.declare_parameter('stationary_tag_id', 1)
-        self.declare_parameter('moving_tag_id', 2) # handled by payload node
-        self.declare_parameter('midpoint_tag_id', 3)
+        self.declare_parameter('midpoint_tag_id', 2)
+        self.declare_parameter('moving_tag_id', 3) # handled by payload node
 
         self.declare_parameter('detection_timeout_sec', 2)
 
@@ -603,7 +603,6 @@ class Coordinator(Node):
 
     def control_loop(self):
         stationary_tag_id = int(self.get_parameter('stationary_tag_id').value)
-        moving_tag_id     = int(self.get_parameter('moving_tag_id').value)
         midpoint_tag_id   = int(self.get_parameter('midpoint_tag_id').value)
 
         if self.map_msg is None:
