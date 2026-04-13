@@ -12,7 +12,6 @@ from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Quaternion, Twist
 from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
-from nav2_msgs.srv import ClearEntireCostmap, ClearCostmapAroundRobot
 from opennav_docking_msgs.action import DockRobot, UndockRobot
 from action_msgs.msg import GoalStatus
 from tf2_ros import TransformBroadcaster  # [J] tf broadcasting for debug
@@ -53,35 +52,22 @@ class Coordinator(Node):
         self.declare_parameter('fallback_revisit_radius_m', 0.8)
         self.declare_parameter('max_recent_fallbacks', 15)
         self.debug_static_broadcaster = TransformBroadcaster(self)   # [J] static broadcaster
-        # aruco tag and offset params
+        
+        # aruco tag ids
         self.declare_parameter('stationary_tag_id', 1)
-        self.declare_parameter('moving_tag_id', 2)
+        self.declare_parameter('moving_tag_id', 2) # handled by payload node
         self.declare_parameter('midpoint_tag_id', 3)
-
-        self.declare_parameter('goal_standoff_m', 0.15)       # [J] modified goal standoff
-        self.declare_parameter('midpoint_standoff_m', 0.15)   # [J] might change to not just a standoff
 
         self.declare_parameter('detection_timeout_sec', 2)    # [J] this is for high latency
 
-        # Camera-frame release gate.
-        # Adjust axes/thresholds after testing.
-        self.declare_parameter('release_lateral_threshold_m', 0.05)
-        self.declare_parameter('release_forward_min_m', 0.15)
-        self.declare_parameter('release_forward_max_m', 0.32)
-        self.declare_parameter('release_required_consecutive_frames', 3)
-
-        # Which camera topic should be trusted for release checks.
-        self.declare_parameter('release_camera_source', 'rpi')
-
-        # Optional topic to trigger dispenser.
+        # dispenser trigger
         self.declare_parameter('dispense_topic', '/station_cmd')
 
         map_topic = self.get_parameter('map_topic').value
         self.dispense_topic = self.get_parameter('dispense_topic').value
 
+        self.pending_dock_goal: Optional[str] = None
         self.last_known_dock_pose: Optional[PoseStamped] = None
-        self.dock_pose_lost_time: Optional[float] = None
-        self.declare_parameter('dock_pose_latch_timeout_sec', 5.0)  # how long to hold last known pose
 
         # ===== Subscriptions =====
         self.map_sub = self.create_subscription(
@@ -101,22 +87,14 @@ class Coordinator(Node):
         # ===== Publishers / actions =====
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self.dispense_pub = self.create_publisher(String, self.dispense_topic, 10)
-        # self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         self.detected_dock_pose_pub = self.create_publisher(
             PoseStamped, '/detected_dock_pose', 10
         )
 
         self.dock_client = ActionClient(self, DockRobot, '/dock_robot')
-
-        # Costmap clearing service for docking
-        self.clear_local_costmap_client = self.create_client(
-            ClearCostmapAroundRobot, '/local_costmap/clear_entirely_local_costmap'
-        )
-        self.clear_global_costmap_client = self.create_client(
-            ClearCostmapAroundRobot, '/global_costmap/clear_entirely_global_costmap'
-        )
-
+        self.undock_client = ActionClient(self, UndockRobot, '/undock_robot')
+    
         # ===== TF =====
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -136,14 +114,12 @@ class Coordinator(Node):
         self.nav_busy = False
         self.last_goal_type: Optional[str] = None
         self.recent_fallback_points = []
-        self.state_entry_time = 0.0      # <--- ADD THIS
-        self.mission_timeout = 50.0       # <--- ADD THIS
+        self.state_entry_time = 0.0
+        self.mission_timeout = 50.0
         self.state = 'EXPLORE'
-        # EXPLORE, GO_TO_STATIONARY, GO_TO_MIDPOINT, WAIT_FOR_MOVING_TIN
+        # EXPLORE, GO_TO_STATIONARY, GO_TO_MIDPOINT, WAIT_A_COMPLETE, WAIT_B_COMPLETE
 
         self.latest_detections: Dict[int, DetectionRecord] = {}
-        self.release_frame_counter = 0
-        self.last_dispense_time_sec = -999.0
 
         self.a_complete = False
         self.b_complete = False
@@ -183,17 +159,7 @@ class Coordinator(Node):
                 source=source,
             )
 
-            old = self.latest_detections.get(int(marker_id))
-            if old is None:
-                self.latest_detections[int(marker_id)] = new_record
-                continue
-
-            # Prefer fresher detections. If same age, prefer release camera.
-            release_source = self.get_parameter('release_camera_source').value
-            if new_record.stamp_sec > old.stamp_sec:
-                self.latest_detections[int(marker_id)] = new_record
-            elif source == release_source and old.source != release_source:
-                self.latest_detections[int(marker_id)] = new_record
+            self.latest_detections[int(marker_id)] = new_record
 
     # ------------------------------------------------------------------
     # Time / TF helpers
@@ -232,7 +198,7 @@ class Coordinator(Node):
         timeout_sec = float(self.get_parameter('detection_timeout_sec').value)
         if age > timeout_sec:#only fresh tags
             return None
-        self.get_logger().info(f'[FRESH] now={now_sec:.3f} rec={rec.stamp_sec:.3f} age={age:.3f}') #debug
+        # self.get_logger().info(f'[FRESH] now={now_sec:.3f} rec={rec.stamp_sec:.3f} age={age:.3f}') 
         return rec
 
     def get_tag_pose_in_map(self, marker_id: int) -> Optional[PoseStamped]:
@@ -271,7 +237,6 @@ class Coordinator(Node):
             #     yaw = math.atan2(dy, dx)
             #     result.pose.orientation = self.yaw_to_quaternion(yaw)
             # Debug TF
-            from geometry_msgs.msg import TransformStamped
             debug_tf = TransformStamped()
             debug_tf.header.stamp = self.get_clock().now().to_msg()
             debug_tf.header.frame_id = 'map'
@@ -302,31 +267,6 @@ class Coordinator(Node):
         q.w = math.cos(yaw / 2.0)
         return q
 
-    def make_offset_goal(
-        self,
-        target_pose_map: PoseStamped,
-        stand_off: float
-    ) -> Optional[PoseStamped]:
-        robot_pose = self.get_robot_pose_in_map()
-        if robot_pose is None:
-            return None
-
-        tx = target_pose_map.pose.position.x
-        ty = target_pose_map.pose.position.y
-        rx = robot_pose.pose.position.x
-        ry = robot_pose.pose.position.y
-
-        yaw = math.atan2(ty - ry, tx - rx)
-
-        goal = PoseStamped()
-        goal.header.frame_id = 'map'
-        goal.header.stamp = self.get_clock().now().to_msg()
-        goal.pose.position.x = tx - stand_off * math.cos(yaw)
-        goal.pose.position.y = ty - stand_off * math.sin(yaw)
-        goal.pose.position.z = 0.0
-        goal.pose.orientation = self.yaw_to_quaternion(yaw)
-        return goal
-
     # ------------------------------------------------------------------
     # Nav2 goal helpers
     # ------------------------------------------------------------------
@@ -337,13 +277,14 @@ class Coordinator(Node):
         if pose is not None:
             # Fresh detection — update latch and reset lost timer
             self.last_known_dock_pose = pose
-            self.dock_pose_lost_time = None
 
         # Publish either fresh or latched pose
         if self.state == 'GO_TO_MIDPOINT' or self.state == 'GO_TO_STATIONARY':
             out = PoseStamped()
             out.header.stamp = self.get_clock().now().to_msg()
             out.header.frame_id = 'map'
+            if self.last_known_dock_pose is None:
+                return
             out.pose = self.last_known_dock_pose.pose
             self.detected_dock_pose_pub.publish(out)
 
@@ -363,13 +304,17 @@ class Coordinator(Node):
         return True
 
     def send_undock_goal(self):
+        if not self.undock_client.wait_for_server(timeout_sec=1.0):
+            self.get_logger().warn('UndockRobot action server not available.')
+            return False
+
         goal = UndockRobot.Goal()
         goal.dock_type = 'aruco_dock'
         goal.max_undocking_time = 2.0
 
         self.nav_busy = True
-        future = self.dock_client.send_goal_async(goal)
-        future.add_done_callback(self.dock_response_callback)
+        future = self.undock_client.send_goal_async(goal)
+        future.add_done_callback(self.undock_response_callback)
         return True
 
     def dock_response_callback(self, future):
@@ -380,23 +325,43 @@ class Coordinator(Node):
             return
         goal_handle.get_result_async().add_done_callback(self.dock_result_callback)
 
+    def undock_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().warn('Undock goal rejected.')
+            self.nav_busy = False
+            return
+        goal_handle.get_result_async().add_done_callback(self.undock_result_callback)
+
     def dock_result_callback(self, future):
         self.nav_busy = False
         self.active_dock_tag_id = None
-        self.last_known_dock_pose = None   # clear latch
-        self.dock_pose_lost_time = None
-        
+
         status = future.result().status
         if status == GoalStatus.STATUS_SUCCEEDED:
+            self.last_known_dock_pose = None   # clear latch
             self.get_logger().info('Docking succeeded.')
             if self.last_goal_type == 'stationary':
                 self.trigger_dispense("A")
                 self.state = 'WAIT_A_COMPLETE'
             elif self.last_goal_type == 'midpoint':
-                self.state = 'WAIT_FOR_MOVING_TIN'
+                self.trigger_dispense("B")
+                self.state = 'WAIT_B_COMPLETE'
         else:
             self.get_logger().warn(f'Docking failed with status {status}.')
             self.state = 'EXPLORE'
+
+    def undock_result_callback(self, future):
+        self.nav_busy = False
+        self.active_dock_tag_id = None
+
+        status = future.result().status
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().info('Undocking succeeded.')
+        else:
+            self.get_logger().warn(f'Docking failed with status {status}.')
+
+        self.state = 'EXPLORE'
 
     def dock_pose_loop(self):
         if self.active_dock_tag_id is None:
@@ -459,17 +424,11 @@ class Coordinator(Node):
                 if len(self.recent_fallback_points) > max_recent:
                     self.recent_fallback_points.pop(0)
 
-            if self.last_goal_type == 'midpoint':
-                self.state = 'WAIT_FOR_MOVING_TIN'
-                self.release_frame_counter = 0
-                self.get_logger().info('Reached midpoint. Waiting for moving tin.')
-
         elif status == GoalStatus.STATUS_CANCELED:
             self.get_logger().info('Goal canceled.')
         else:
-            self.get_logger().warn(f'Goal ended with status {status}.')
-            if self.state != 'WAIT_FOR_MOVING_TIN':
-                self.state = 'EXPLORE'
+            self.get_logger().warn(f'Goal ended with status {status}. Continuing exploration.')
+            self.state = 'EXPLORE'
 
         self.goal_handle = None
 
@@ -480,11 +439,29 @@ class Coordinator(Node):
             return
 
         self.get_logger().info('Canceling current goal...')
-        cancel_future = self.goal_handle.cancel_goal_async()
+        cancel_future = self.goal_handle.async_cancel_goal()
         cancel_future.add_done_callback(self.cancel_done_callback)
 
     def cancel_done_callback(self, future):
-        self.get_logger().info('Cancel request sent.')
+        self.get_logger().info('Cancel request completed.')
+
+        self.nav_busy = False
+
+        if self.pending_dock_goal is not None:
+            dock_id = self.pending_dock_goal
+            self.pending_dock_goal = None
+
+            self.get_logger().info(f'Sending dock goal after cancel: {dock_id}')
+
+            if self.send_dock_goal(dock_id):
+                if dock_id == 'stationary_dock':
+                    self.state = 'GO_TO_STATIONARY'
+                    self.state_entry_time = self.now_sec()
+                elif dock_id == 'midpoint_dock':
+                    self.state = 'GO_TO_MIDPOINT'
+                    self.state_entry_time = self.now_sec()
+            else:
+                self.nav_busy = False
 
     def mission_complete_cb(self, msg):
         if msg.data == 'FINISH_A':
@@ -497,16 +474,14 @@ class Coordinator(Node):
             self.b_complete = True
             self.send_undock_goal()
             self.state = 'EXPLORE'
+            
     # ------------------------------------------------------------------
     # Dispense helpers
     # ------------------------------------------------------------------
 
     def trigger_dispense(self, mode): 
         # mode should be "A" or "B"
-        from std_msgs.msg import String
-
         msg = String()
-
         if mode == "A":
             msg.data = "START_A"
         elif mode == "B":
@@ -516,41 +491,8 @@ class Coordinator(Node):
             return
 
         self.dispense_pub.publish(msg)
-        self.last_dispense_time_sec = self.now_sec()
-        self.state_entry_time = self.now_sec()  # <--- ADD THIS
-        self.release_frame_counter = 0
+        self.state_entry_time = self.now_sec()
         self.get_logger().info(f'DISPENSE TRIGGERED: {msg.data}')
-
-    def pose_is_in_release_zone(self, marker_id: int) -> bool:
-        rec = self.get_fresh_detection(marker_id)
-        if rec is None:
-            return False
-
-        release_source = self.get_parameter('release_camera_source').value
-        if rec.source != release_source:
-            return False
-
-        # ros2_aruco publishes tvec directly as pose.position.
-        # In the common optical-camera convention used by this node:
-        # x = horizontal, z = forward range for practical gating here.
-        x = rec.pose_stamped.pose.position.x
-        z = rec.pose_stamped.pose.position.z
-
-        lat_thresh = float(self.get_parameter('release_lateral_threshold_m').value)
-        z_min = float(self.get_parameter('release_forward_min_m').value)
-        z_max = float(self.get_parameter('release_forward_max_m').value)
-
-        return abs(x) <= lat_thresh and z_min <= z <= z_max
-
-    def update_release_counter(self, marker_id: int) -> bool:
-        needed = int(self.get_parameter('release_required_consecutive_frames').value)
-
-        if self.pose_is_in_release_zone(marker_id):
-            self.release_frame_counter += 1
-        else:
-            self.release_frame_counter = 0
-
-        return self.release_frame_counter >= needed
 
     # ------------------------------------------------------------------
     # Frontier mode
@@ -652,100 +594,53 @@ class Coordinator(Node):
     # ------------------------------------------------------------------
 
     def control_loop(self):
-        if self.map_msg is None:
-            return
-        if self.state in ['WAIT_A_COMPLETE', 'WAIT_B_COMPLETE']:
-            if (self.now_sec() - self.state_entry_time) > self.mission_timeout:
-                self.get_logger().error(f'TIMEOUT waiting for {self.state}. Resuming exploration.')
-                if self.state == 'WAIT_A_COMPLETE': self.a_complete = True
-                if self.state == 'WAIT_B_COMPLETE': self.b_complete = True
-                self.state = 'EXPLORE'
-            return 
-        
         stationary_tag_id = int(self.get_parameter('stationary_tag_id').value)
-        moving_tag_id = int(self.get_parameter('moving_tag_id').value)
         midpoint_tag_id = int(self.get_parameter('midpoint_tag_id').value)
 
+        if self.map_msg is None:
+            return
+        
         # Priority:
         # 1) stationary tin if visible
         # 2) midpoint for moving tin
         # 3) exploration
 
-        if self.state == 'EXPLORE':
+        if self.state in ['WAIT_A_COMPLETE', 'WAIT_B_COMPLETE', 'GO_TO_STATIONARY', 'GO_TO_MIDPOINT']:
+            if (self.now_sec() - self.state_entry_time) > self.mission_timeout:
+                self.get_logger().error(f'TIMEOUT waiting for {self.state}. Resuming exploration.')
+                if self.state == 'WAIT_A_COMPLETE': self.a_complete = True
+                if self.state == 'WAIT_B_COMPLETE': self.b_complete = True
+                self.state = 'EXPLORE'
+
+        elif self.state == 'EXPLORE':
             stationary_pose_map = self.get_tag_pose_in_map(stationary_tag_id)
             if stationary_pose_map is not None and not self.a_complete:
-                if self.nav_busy:
-                    self.cancel_current_goal()
                 self.last_goal_type = 'stationary'
                 self.active_dock_tag_id = stationary_tag_id
+                if self.nav_busy:
+                    self.pending_dock_goal = 'stationary_dock'
+                    self.cancel_current_goal()
+                    return
                 if self.send_dock_goal('stationary_dock'):
                     self.state = 'GO_TO_STATIONARY'
+                    self.state_entry_time = self.now_sec()
                     return
 
             midpoint_pose_map = self.get_tag_pose_in_map(midpoint_tag_id)
             if midpoint_pose_map is not None and not self.b_complete:
-                if self.nav_busy:
-                    self.cancel_current_goal()
                 self.last_goal_type = 'midpoint'
                 self.active_dock_tag_id = midpoint_tag_id
+                if self.nav_busy:
+                    self.pending_dock_goal = 'midpoint_dock'
+                    self.cancel_current_goal()
+                    return
                 if self.send_dock_goal('midpoint_dock'):
                     self.state = 'GO_TO_MIDPOINT'
+                    self.state_entry_time = self.now_sec()
                     return
+                
             self.run_frontier_mode()
             return
-
-        if self.state == 'GO_TO_STATIONARY':
-            # Once the stationary tin is in the release window for N cycles, dispense.
-            if self.update_release_counter(stationary_tag_id):
-                if self.nav_busy:
-                    self.cancel_current_goal()
-                self.trigger_dispense("A")
-                self.state = 'WAIT_A_COMPLETE'
-                return
-
-            # If stationary tag disappears for too long, go back to exploration.
-            if self.get_fresh_detection(stationary_tag_id) is None and not self.nav_busy:
-                self.get_logger().info('Stationary tag lost. Returning to explore.')
-                self.state = 'EXPLORE'
-                self.release_frame_counter = 0
-                return
-
-            return
-
-        if self.state == 'GO_TO_MIDPOINT':
-            # Wait for nav result callback to move us to WAIT_FOR_MOVING_TIN.
-            # If midpoint tag is lost and nav is idle, fall back to exploration.
-            if self.get_fresh_detection(midpoint_tag_id) is None and not self.nav_busy:
-                self.get_logger().info('Midpoint tag lost. Returning to explore.')
-                self.state = 'EXPLORE'
-                self.release_frame_counter = 0
-            return
-
-        if self.state == 'WAIT_FOR_MOVING_TIN':
-            if self.update_release_counter(moving_tag_id):
-                self.trigger_dispense("B")
-                self.state = 'WAIT_B_COMPLETE'
-                return
-
-            # If midpoint and moving tin are both gone, resume exploring.
-            if (
-                self.get_fresh_detection(midpoint_tag_id) is None and
-                self.get_fresh_detection(moving_tag_id) is None
-            ):
-                self.get_logger().info('Moving-tin tracking lost. Returning to explore.')
-                self.state = 'EXPLORE'
-                self.release_frame_counter = 0
-            return
-        
-        if self.state == 'WAIT_B_COMPLETE':
-            if (
-                 self.get_fresh_detection(midpoint_tag_id) is None and
-                 self.get_fresh_detection(moving_tag_id) is None
-            ):
-                 self.get_logger().warn('Tags lost while waiting for FINISH_B. Resuming explore.')
-                 self.state = 'EXPLORE'
-            return
-
 
 def main(args=None):
     rclpy.init(args=args)
