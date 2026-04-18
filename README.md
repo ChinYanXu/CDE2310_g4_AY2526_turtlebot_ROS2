@@ -20,11 +20,13 @@ this repository includes the launch files for:
 3. rosdep update
 4. rosdep install --from-paths src --ignore-src -r -y
 5. pip3 install opencv-contrib-python transforms3d
-6. *check that numpy version is 1.26.4, if it isnt then pip [uninstall numpy -y] and [pip install numpy==1.26.4]
-7. colcon build
-8. source install/setup.bash
-9. chmod +x one.sh
-
+6. colcon build
+7. source install/setup.bash
+###### *check that numpy version is 1.26.4, if it isnt then pip [uninstall numpy -y] and [pip install numpy==1.26.4]
+8. chmod +x one.sh
+###### move camera calibration files to correct destination
+9. cd ~/launchfiles/camera_calibration_files
+10. cp * ~/.ros/camera-info
 
 
 <h2>launch all files</h2>
