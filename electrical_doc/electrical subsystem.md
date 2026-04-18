@@ -98,4 +98,5 @@ Battery can last for more than enough time.
 
 <img width="1805" height="1174" alt="image" src="https://github.com/user-attachments/assets/7fe40106-f4ac-4223-88d0-8409a73c6873" />
 
-(add more tmr)
+(will add wiring schematics soon)
+
