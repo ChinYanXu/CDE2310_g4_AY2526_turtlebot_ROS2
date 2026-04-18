@@ -14,7 +14,7 @@ this repository includes the launch files for:
 
 
 
-###setup [ON RPI]
+### setup [ON RPI]
 1. mkdir launchfiles && cd launchfiles
 2. git clone --branch rpi_code --single-branch https://github.com/ChinYanXu/CDE2310_g4_AY2526_turtlebot_ROS2.git
 3. rosdep update
