@@ -2,6 +2,10 @@ RPI CAMERA STACK
 
 before getting started you should make sure that you have followed the setup guide for your rpi in the [turtlebot setup guide](https://emanual.robotis.com/docs/en/platform/turtlebot3/sbc_setup/#sbc-setup)
 
+please note that for the rpi camera setup, follow the v4l2 instructions
+sudo apt-get install ros-humble-usb-cam
+
+
 this repository includes the launch files for:
  - Camera Image Node
  - Aruco Detection Node
