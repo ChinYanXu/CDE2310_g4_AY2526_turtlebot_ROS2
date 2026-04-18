@@ -24,15 +24,14 @@ $ colcon build
 $ cp ~/colcon_ws/src/CDE2310_g4_AY2526_turtlebot_ROS2/nav2_params/burger.yaml ~/turtlebot3_ws/src/turtlebot3/turtlebot3_navigation2/param/humble
 ```
 
-6. Reconfigure the planner server's lattice_filepath in burger.yaml. 
-In burger.yaml, find the following line and edit it to the correct path:
+6. Reconfigure the planner server's lattice_filepath in burger.yaml. Find the following line and edit it to the correct path:
 ```
       lattice_filepath: "/home/tanyunqi/burger_primitive.json"
 ```
 
 7. Run frontier explorer or coordinator using the following commands.
 ```bash
-$ source ~/colcon_ws/install/setup.
+$ source ~/colcon_ws/install/setup.bash
 $ ros2 run cde2310_g4_ay2526 frontier_explorer
 $ ros2 run cde2310_g4_ay2526 coordinator
 ```
