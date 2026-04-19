@@ -104,4 +104,4 @@ Battery can last for more than enough time.
 
 ### Raspberry Pi 
 <img width="1805" height="1745" alt="image" src="https://github.com/user-attachments/assets/32616024-529a-4825-8c32-1134a4858e68" />
-The servos are powered via the 5V and GND pins of the Raspberry Pi, with GPIO pins 18 and 12 configured as control signals. The cameras are connected through the Raspberry Pi’s USB ports.
+The servos are connected to 5V and GND pins of the Raspberry Pi, with GPIO pins 18 and 12 configured as control signals. The cameras are connected through the Raspberry Pi’s USB ports.
