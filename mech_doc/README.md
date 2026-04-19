@@ -15,14 +15,13 @@ This document provides detailed instructions for printing, assembling, and integ
 - USB2LDS
 
 ### Bill of Materials
-- Adafruit PCA9685 16-Channel Servo Driver
 - Arducam OV5648 5MP USB Camera x2
 - SG90 Servos x2
 - Hot Glue Gun x1
 - Alt Tab PLA Filament 1kg
 
 ### Printed Parts
-- **Servo Mounts**: Individually printed servo mounts. (Print 1 L and 1 R)
+- **Servo Mounts**: Individually printed servo mounts. (Servo 1 is the front, Servo 2 is the rear)
 - **Camera Mounts**: Individually printed camera mounts. (Print 1 High and 1 Low)
 - **Ball Magazine Ramp**: Individually printed.
 - **Ball Holder**: Individually printed.
