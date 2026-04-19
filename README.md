@@ -11,7 +11,7 @@ In this year’s mission, we have to design, implement, and validate an Autonomo
 - [Con Ops](docs/Con_Ops.md)
 - [Soft/firmware development documentation](docs/Software_Firmware_Development_Documentation.md)
 - [Testing documentations](docs/Testing_Documentations.md)
-- [Electrical module documentation](electrical_doc/electrical subsystem.md)
+- [Electrical module documentation](electrical_doc/electrical_subsystem.md)
 - [Mechanical module documentation](mech_doc/README.md)
 - [Mechanical module files](mech_doc)
 
@@ -22,6 +22,7 @@ In this year’s mission, we have to design, implement, and validate an Autonomo
 3) Layog Ethan Andrei Belo (Mechanical)
 4) Tan Yun Qi (Software)
 5) Viswanathan Sahanaa (Electrical)
+
 ![Team photo](CDE2310_group4_photo.jpg)
 
 ## User Guide
@@ -35,7 +36,7 @@ In this year’s mission, we have to design, implement, and validate an Autonomo
 | Technical components | Details |
 |---|---|
 | Model name | TurtleBot3 Burger Spiral Slide V1.0 |
-| Software version | 0.3.0 |
+| Software version | 1.0.8 |
 | Battery capacity| Lithium polymer 11.1V 1800mAh / 19.98Wh 5C |
 | Max Runtime | ~ 1 - 1.5 hours|
 | Charging time| ~ 2.5 hours |
@@ -47,14 +48,14 @@ In this year’s mission, we have to design, implement, and validate an Autonomo
 1x Turtlebot 
 
 Payload Delivery:
-    2x OV5648 5MP Arducam
-    2x Camera Mount
-    2x Ball Gates
-    1x Ball Magazine Ramp
-    1x Ball Holder
-    1x Ball Launch Ramp
-    2x SG90 Servo Motor
-    2x Servo Motor Stand
+- 2x OV5648 5MP Arducam
+- 2x Camera Mount
+- 2x Ball Gates
+- 1x Ball Magazine Ramp
+- 1x Ball Holder
+- 1x Ball Launch Ramp
+- 2x SG90 Servo Motor
+- 2x Servo Motor Stand
 
 ## Referenced repositories
 

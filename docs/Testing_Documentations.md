@@ -2,11 +2,13 @@
 title: Testing Documentations
 ---
 
+# Testing Documentations
+
 ## Navigation
 
 - [Back to main README.md](../README.md)
 
-### Factory Test Checklist
+## Factory Test Checklist
 
 | Task | Check |
 |---|---|
@@ -18,8 +20,8 @@ title: Testing Documentations
 | Run “one.sh rpi” on the rpi ubuntu terminal and then “one.sh laptop <camera_root> <navigation_root>” on the laptop terminal. On the laptop side 3 additional terminals should be open. |   |
 
 
-### Acceptable defects
+## Acceptable defects
 No defects found
 
-### User maintenance
+## User maintenance
 No maintenance needed as no defects found.

@@ -2,12 +2,14 @@
 title: Requirements Specification
 ---
 
-# Navigation
+# Requirements Specification
+
+## Navigation
 
 - [Back to main README.md](../README.md)
 
 ---
-### Objectives
+## Objectives
 We are tasked with simulating goods delivery by a warehouse AMR. The problem can be summarised to a few key objectives:
 
 1) Map out the maze zone
@@ -17,14 +19,14 @@ We are tasked with simulating goods delivery by a warehouse AMR. The problem can
 5) Dispense ping pong ball into the delivery zone (This is a bonus objective)
 6) Identify the location of the exit. Navigate to the exit.
 
-### Constraints
+## Constraints
 These key objectives must be completed within the following set of constraints:
 
 1) 25 minute time limit for setup, mission and cleanup
 2) Bot navigates using SLAM, lidar or computer vision
 3) Maximum of 6 temporary markers can be used
 
-### Functional Requirements
+## Functional Requirements
 We make the assumption that we will not be attempting the bonus objective. From the remaining key objectives, we distilled a few functional requirements for our robot:
 
 | Requirement Category | Functional Requirement                                                                                           |

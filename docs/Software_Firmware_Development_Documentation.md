@@ -2,11 +2,13 @@
 title: Soft/Firmware Development Documentation
 ---
 
+# Soft/Firmware Development Documentation
+
 ## Navigation
 
 - [Back to main README.md](../README.md)
 
-### Software Interfaces
+## Software Interfaces
 
 ![Software_Interface_Diagram](software_interface_diagram.png)
 
@@ -18,10 +20,10 @@ The coordinator also communicates with the payload delivery module through a com
 
 For the moving-station mission, the right camera image stream is processed by a separate ArUco detection node that publishes `/cam_right/aruco_markers` to `payload.py`. After the coordinator arms the Station B sequence, the payload node waits for the appropriate visual trigger before actuating the servos. This ensures that payload release occurs only when the moving target is in the correct position.
 
-### Frontier Detection 
+## Frontier Detection 
 The frontier detection module enables the robot to autonomously explore unknown areas of the maze using the occupancy grid map. A cell is considered a frontier if it is a free cell and at least one of its neighbours is unknown. The frontier detection module groups neighbouring frontier cells into frontier regions and chooses the centroid of a region as the navigation destination for the region. The centroid of the largest frontier region is chosen as the navigation goal. Previously the nearest region is chosen but this would cause the robot to only explore a small area in the maze. If a suitable frontier region is not found, the modules selects a fallback destination by choosing a free-space point near the explored unexplored boundary that is sufficiently far from obstacles and recently visited fallback points. 
 
-### Coordinator
+## Coordinator
 The coordinator orchestrates the overall mission logic, including maze exploration, docking, payload delivery triggering, and undocking. Actual navigation is handled by the Nav2 `NavigateToPose` action, while docking and undocking are handled using the Nav2 docking actions. When the robot is in the `EXPLORE` state, it uses frontier detection to search the maze. If the stationary or moving station ArUco tag is detected, the coordinator transitions to the corresponding docking state. Once docking succeeds, the coordinator triggers payload delivery and waits for the payload node to report completion before commanding the robot to undock and resume exploration.
 
 ![Coordinator State Diagram](Coordinator_state_diagram.png)
@@ -34,6 +36,6 @@ The coordinator orchestrates the overall mission logic, including maze explorati
 | WAIT_A_COMPLETE | The robot has triggered payload delivery for Station A and is waiting for the payload sequence to finish. |
 | WAIT_B_COMPLETE | The robot has triggered payload delivery for Station B and is waiting for the payload sequence to finish. |
 
-### Servo Code
+## Servo Code
 The `payload.py` program controls the two servos used for payload release. It subscribes to `/station_cmd` for mission commands and publishes `/mission_complete` when dispensing is done. For Station A, the payload sequence is executed immediately after receiving `START_A`. For Station B, the node is first armed by `START_B`, and payload release is then triggered step-by-step based on ArUco detections from the right camera. This allows the moving station payload to be dispensed only when the target is in the correct position.
 
