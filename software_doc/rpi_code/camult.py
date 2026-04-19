@@ -45,16 +45,16 @@ def generate_launch_description():
     usb_cameras = [
         (
             'usb_cam_left',
-            '/dev/video0',
+            '/dev/video0', #CHANGE TO WHAT YOU SEE IN TERMINAL WHEN YOU RUN "v4l2-ctl --list-devices"
             'cam_left',
-            'file:///home/ubuntu/.ros/camera_info/640480left.yaml',
+            'file:///home/ubuntu/.ros/camera_info/640480left.yaml',   #CHANGE TO YOUR CAMERA INFO FILE PATH
         )
-     #   (
-    #        'usb_cam_right',
-   #         '/dev/video2',
-  #          'cam_right',
- #           'file:///home/ubuntu/.ros/camera_info/640480right.yaml',
-#        ),
+        (
+            'usb_cam_right',
+            '/dev/video2', #CHANGE TO WHAT YOU SEE IN TERMINAL WHEN YOU RUN "v4l2-ctl --list-devices"
+            'cam_right',
+            'file:///home/ubuntu/.ros/camera_info/640480right.yaml'   #CHANGE TO YOUR CAMERA INFO FILE PATH
+        ), 
     ]
 
     for name, device, ns, info_url in usb_cameras:

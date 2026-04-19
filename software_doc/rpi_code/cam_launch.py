@@ -4,10 +4,19 @@ from launch_ros.actions import Node
 def generate_launch_description():
     # 1. Define USB Cameras (using usb_cam package)
     # ('Name', 'Device Path', 'Namespace')
-    usb_cameras =[ [
-       ('usb_cam_right', '/dev/video2', 'cam_right','file:///home/ubuntu/.ros/camera_info/640480right.yaml'),
-        ('usb_cam_left', '/dev/video0', 'cam_left','file:///home/ubuntu/.ros/camera_info/640480left.yaml')
-    ][1]]
+    usb_cameras = [
+       (
+            'usb_cam_right',
+            '/dev/video2',    #CHANGE TO WHAT YOU SEE IN TERMINAL WHEN YOU RUN "v4l2-ctl --list-devices"
+            'cam_right', 
+            'file:///home/ubuntu/.ros/camera_info/640480right.yaml'  #CHANGE TO YOUR CAMERA INFO FILE PATH
+        ),
+        (
+            'usb_cam_left', 
+            '/dev/video0',    #CHANGE TO WHAT YOU SEE IN TERMINAL WHEN YOU RUN "v4l2-ctl --list-devices"
+            'cam_left',
+            'file:///home/ubuntu/.ros/camera_info/640480left.yaml')  #CHANGE TO YOUR CAMERA INFO FILE PATH
+    ]
 
     # 2. Define RPI Camera (using v4l2_camera package)
     rpi_cam_config = {'name': 'rpi', 'device': '/dev/video4', 'ns': 'rpi'}
@@ -57,4 +66,3 @@ def generate_launch_description():
     )
     """
     return LaunchDescription(nodes)
-
