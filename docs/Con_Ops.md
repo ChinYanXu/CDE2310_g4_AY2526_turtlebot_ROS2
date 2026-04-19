@@ -6,8 +6,7 @@ title: Con Ops
 
 ## Navigation
 
-- [Requirements Specification](Requirement_specifications.md)
-- [Con Ops](Con_Ops.md)
+- [Back to main README.md](../README.md)
 
 ## Concept of Operation and High-Level Design
 

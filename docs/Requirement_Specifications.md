@@ -4,7 +4,7 @@ title: Requirements Specification
 
 # Navigation
 
-- [Requirements Specification](Requirement_specifications.md)
+- [Back to main README.md](../README.md)
 
 ---
 ### Objectives
