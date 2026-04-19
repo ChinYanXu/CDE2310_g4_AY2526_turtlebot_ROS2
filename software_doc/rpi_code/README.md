@@ -6,8 +6,8 @@
 
 additionally, for image nodes for usb cameras
 
-> sudo apt-get install ros-humble-usb-cam
-> sudo apt-get install v4l-utils
+> sudo apt-get install ros-humble-usb-cam v4l-utils
+
 
 ### this repository includes the launch files for:
  - #### Camera Image Node
