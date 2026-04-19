@@ -36,7 +36,7 @@ In this year’s mission, we have to design, implement, and validate an Autonomo
 | Technical components | Details |
 |---|---|
 | Model name | TurtleBot3 Burger Spiral Slide V1.0 |
-| Software version | 1.0.8 |
+| Software version | 1.1.1 |
 | Battery capacity| Lithium polymer 11.1V 1800mAh / 19.98Wh 5C |
 | Max Runtime | ~ 1 - 1.5 hours|
 | Charging time| ~ 2.5 hours |
