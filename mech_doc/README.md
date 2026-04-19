@@ -65,12 +65,13 @@ This document provides detailed instructions for printing, assembling, and integ
         - 2x 30mm
         - 1x 15mm
    - Attach the removed LIDAR floor to the top of the TurtleBot and secure with bolts.
-
+   - 
 ### Step 4: Camera installation
 1. **Secure Camera to mount**: Use ing M2 nuts and bolts, secure the camera to the mount.
 2. **Attaching Camera to TurtleBot**: 
    - Align Camera HIGH to the front of the OpenCR Level and press down to secure press fit extrusions to their respective holes.
    - Align Camera LOW to the front of the battery Level and press down to secure press fit extrusions to their respective holes.
+3. **Battery**: In the case that the battery blocks CAM MOUNT LOW, reorganize press fit spacers and move battery backwards.
 ---
 
 ## Important Installation Notes
