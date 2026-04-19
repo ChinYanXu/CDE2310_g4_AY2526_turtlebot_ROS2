@@ -42,7 +42,7 @@ Our group's specific delivery timing sequence is 6-4. Station A logic executes a
 ### Station B 
 Station B logic utilizes the Aruco Marker detection to drop the balls. When the robot docks, a 'START_B' command activates the system but the balls do not drop immediately. Instead, each ball is dispensed one at a time whenever the USB camera detects an Aruco Marker (Tag ID 3) placed inside the moving tin can. 
 
-To prevent the system from double-firing for the same visual frame, there is a 2 second cooldown between triggers. Delivering all 3 balls require 4 separate Aruco marker detections (passes).
+To prevent the system from double-firing for the same visual frame, there is a 2 second cooldown between triggers. Delivering all 3 balls requires 4 separate Aruco marker detections (passes).
 
 **Sequence**:
     1. **First detection**: Inner gate opens to load the first ball into the chamber.
