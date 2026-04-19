@@ -1,7 +1,7 @@
 # Electrical Subsystem
 Our Electrical Subsystem consists of the following: 
 1. System Overview
-2. Key Components for Payload Delivery 
+2. Key Components
 3. Details on the Mechanism
    - Station A
    - Station B
@@ -16,7 +16,7 @@ Two SG90 servos act as the physical gates and are driven by PWM signals directly
 Ramp → [Inner Gate] → Holding Chamber → [Outer Gate] → Tin Can
 ```
 
-## Key Components for Payload Delivery 
+## Key Components 
 | Payload Components | Units|
 | :--- | :--- |
 | SG90 Servo | x2 |
