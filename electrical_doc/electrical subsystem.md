@@ -37,7 +37,7 @@ Our group's specific delivery timing sequence is 6-4. Station A logic executes a
 **Sequence**: 
     1. Inner gate opens and closes to load the first ball into the chamber, immediately followed by the outer gate opening and closing to drop it. 
     2. The system waits for 5 seconds, then repeats the sequence for the second ball. This accounts for the 6-second requirement (factoring in a 1-second physical drop delay). 
-    3. The system waits for another 3 seconds and then repeats the sequence for the third ball. This accounts for the 4-second wait (factoring in the 4-second requirement). 
+    3. The system waits for another 3 seconds and then repeats the sequence for the third ball. This accounts for the 4-second wait. 
     4. Once finished, the node publishes a 'FINISH_A' message to the '/mission_complete' topic so the robot can resume movement.
 ### Station B 
 Station B logic utilizes the Aruco Marker detection to drop the balls. When the robot docks, a 'START_B' command activates the system but the balls do not drop immediately. Instead, each ball is dispensed one at a time whenever the USB camera detects an Aruco Marker (Tag ID 3) placed inside the moving tin can. 
@@ -46,7 +46,7 @@ To prevent the system from double-firing for the same visual frame, there is a 2
 
 **Sequence**:
     1. **First detection**: Inner gate opens to load the first ball into the chamber.
-    2. **Second & Third detection**: The outer gate opens to drop the single ball into tin can and inner gate immediately loads the next ball into chamber 
+    2. **Second & Third detection**: The outer gate opens to drop the single ball into tin can and inner gate immediately loads the next ball into chamber.
     3. **Fourth detection**: The outer gate drops the third ball into the tin. The node disarms the sequence and publishes a 'FINISH_B' message so that the robot can resume movement.
 
 
@@ -85,9 +85,9 @@ To ensure the robot can operate reliably during the full mission, we calculated 
 
 | Scenario | Calculation | Estimated Runtime |
 | :--- | :--- | :--- |
-| **Minimum** | 19.98Wh ÷ 10.61W | **~112.8min** |
-| **Normal Operation under Minimum Load** | 19.98Wh ÷ 11.44W | **~105.0min** |
-| **Normal Operation under Maximum Load** | 19.98Wh ÷ 14.04W | **~85.2min** |
+| **Minimum** | 19.98Wh ÷ 10.61W | **~113.0min** |
+| **Normal Operation under Minimum Load** | 19.98Wh ÷ 11.44W | **~104.8min** |
+| **Normal Operation under Maximum Load** | 19.98Wh ÷ 14.04W | **~85.4min** |
 | **Maximum** | 19.98Wh ÷ 15.98W | **~75.0min** |
 
 The calculated runtime for all scenarios significantly exceeds the required mission duration.
