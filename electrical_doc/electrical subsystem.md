@@ -2,7 +2,7 @@
 Our Electrical Subsystem consists of the following: 
 1. System Overview
 2. Key Components for Payload Delivery 
-3. **Details on the Mechanism**
+3. ## Details on the Mechanism
    a) Station A
    b) Station B
 4. Power Calculations
