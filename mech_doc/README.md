@@ -3,7 +3,7 @@
 This document provides detailed instructions for printing, assembling, and integrating the payload onto your TurtleBot.
 
 ---
-
+![alt text](../images/g4_turtlebot3_image.png)
 ## Components
 
 ### TurtleBot3 Subcomponents
@@ -101,5 +101,5 @@ This document provides detailed instructions for printing, assembling, and integ
 
 ---
 
-For further support or inquiries, please contact CDE2310 Group 4 AY25/26 or refer to the provided project documentation.
-```
+For further support or inquiries, please contact CDE2310 Group 4 AY25/26 or refer to the provided project documentation.   
+![final version](../images/final_version.png)
