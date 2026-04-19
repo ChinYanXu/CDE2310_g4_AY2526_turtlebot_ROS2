@@ -65,7 +65,7 @@ This document provides detailed instructions for printing, assembling, and integ
         - 2x 30mm
         - 1x 15mm
    - Attach the removed LIDAR floor to the top of the TurtleBot and secure with bolts.
-   - 
+     
 ### Step 4: Camera installation
 1. **Secure Camera to mount**: Use ing M2 nuts and bolts, secure the camera to the mount.
 2. **Attaching Camera to TurtleBot**: 
@@ -80,7 +80,7 @@ This document provides detailed instructions for printing, assembling, and integ
 - **Camera and Servo Motors**: Wire these components after the payload floor is fully secured, to avoid wiring complications.
 
 ### Servo Installation
-- Servos as press fit into the 3d printed mounts, masking tape can be used to secure further.\
+- Servos are press fit into the 3d printed mounts, masking tape can be used to secure further.
   
 ---
 
