@@ -61,6 +61,8 @@ nano camult.py        #->change the camera directories in lines 48 and 54
 
 <br></br>
 
-<h2>launch all files</h2>
-- [inside launchfiles folder]
-- ./one.sh rpi
+## launch all files
+```
+1. cd ~/launchfiles
+2. ./one.sh rpi
+```
