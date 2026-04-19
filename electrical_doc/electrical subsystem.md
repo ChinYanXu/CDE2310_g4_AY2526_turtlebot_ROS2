@@ -96,7 +96,13 @@ Battery can last for more than enough time.
 
 ## Schematics
 
+###Electrical Conceptual Diagram
 <img width="1805" height="1174" alt="image" src="https://github.com/user-attachments/assets/7fe40106-f4ac-4223-88d0-8409a73c6873" />
 
-(will add wiring schematics soon)
+###Raspberry Pi 
+<img width="1805" height="1745" alt="image" src="https://github.com/user-attachments/assets/32616024-529a-4825-8c32-1134a4858e68" />
+
+###Open CR
+<img width="2128" height="1644" alt="image" src="https://github.com/user-attachments/assets/42a9c008-330a-4d79-a182-ca96603f030d" />
+
 
